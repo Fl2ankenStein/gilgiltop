@@ -18,8 +18,8 @@ async def extract_vless_configs(api_id, api_hash, phone, channels):
 
     for channel_username in channels:
         try:
-            channel = await client.get_entity(channel_username)
-            print(f"در حال خواندن از کانال: {channel_username}")
+            channel = await client.get_entity(channel_username.strip())
+            print(f"در حال خواندن از کانال: {channel_username.strip()}")
 
             posts = await client(GetHistoryRequest(
                 peer=PeerChannel(channel.id),
@@ -76,22 +76,36 @@ async def main():
     API_ID = os.getenv("API_ID")
     API_HASH = os.getenv("API_HASH")
     PHONE = os.getenv("PHONE")
-    GITHUB_REPO = os.getenv("GITHUB_REPO")
-    GITHUB_BRANCH = os.getenv("GITHUB_BRANCH", "main")
-    GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-    FILE_PATH = os.getenv("FILE_PATH", "configs.txt")
+    GH_REPO = os.getenv("GH_REPO")
+    GH_BRANCH = os.getenv("GH_BRANCH", "main")
+    GH_TOKEN = os.getenv("GH_TOKEN")
+    GH_FILE_PATH = os.getenv("GH_FILE_PATH", "configs.txt")
     CHANNELS = os.getenv("CHANNELS", "").split(",")
 
-    if not all([API_ID, API_HASH, PHONE, GITHUB_REPO, GITHUB_TOKEN, CHANNELS[0]]):
-        print("❌ تمام متغیرهای محیطی باید تنظیم شوند.")
+    # بررسی اینکه همه فیلدهای ضروری پر شده باشند
+    required = [API_ID, API_HASH, PHONE, GH_REPO, GH_TOKEN, CHANNELS[0]]
+    if not all(required):
+        print("❌ خطای تنظیمات: یک یا چند متغیر محیطی مقدار ندارد.")
+        print("مطمئن شو تمام secrets در GitHub تنظیم شده‌اند.")
         return
 
-    configs = await extract_vless_configs(int(API_ID), API_HASH, PHONE, CHANNELS)
+    # تبدیل API_ID به عدد
+    try:
+        API_ID = int(API_ID)
+    except:
+        print("❌ API_ID باید یک عدد باشد.")
+        return
+
+    # حذف کانال‌های خالی
+    CHANNELS = [ch.strip() for ch in CHANNELS if ch.strip()]
+
+    print(f"🔍 جستجو در {len(CHANNELS)} کانال: {', '.join(CHANNELS)}")
+    configs = await extract_vless_configs(API_ID, API_HASH, PHONE, CHANNELS)
     
     if configs.strip():
-        upload_to_github(configs, GITHUB_REPO, GITHUB_BRANCH, FILE_PATH, GITHUB_TOKEN)
+        upload_to_github(configs, GH_REPO, GH_BRANCH, GH_FILE_PATH, GH_TOKEN)
     else:
-        print("⚠️ هیچ کانفیگی پیدا نشد.")
+        print("⚠️ هیچ کانفیگی پیدا نشد یا استخراج نشد.")
 
 if __name__ == "__main__":
     asyncio.run(main())
