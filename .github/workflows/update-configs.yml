@@ -1,0 +1,40 @@
+name: جمع‌آوری VLESS
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with: python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: رمزگشایی session
+        if: success()
+        run: |
+          if [ -f session.session.enc ]; then
+            python -c "
+import os
+from cryptography.fernet import Fernet
+key = os.getenv('SESSION_DECRYPT_KEY').encode()
+with open('session.session.enc', 'rb') as f: data = f.read()
+cipher = Fernet(key)
+with open('session.session', 'wb') as f: f.write(cipher.decrypt(data))
+print('✅ session آماده شد.')
+"
+          fi
+      - name: اجرای اسکریپت
+        env:
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          PHONE: ${{ secrets.PHONE }}
+          GH_REPO: ${{ secrets.GH_REPO }}
+          GH_BRANCH: ${{ secrets.GH_BRANCH }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_FILE_PATH: ${{ secrets.GH_FILE_PATH }}
+          CHANNELS: ${{ secrets.CHANNELS }}
+        run: python fetch_configs.py

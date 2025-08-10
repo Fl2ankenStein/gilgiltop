@@ -1,6 +1,0 @@
-git init
-git add .
-git commit -m "افزودن اسکریپت و workflow"
-git remote add origin https://github.com/Fl2ankenStein/gilgiltop.git
-git branch -M main
-git push -u origin main
