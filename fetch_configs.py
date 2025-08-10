@@ -50,8 +50,8 @@ def upload_to_github(content, repo, branch, path, token):
     sha = response.json().get('sha') if response.status_code == 200 else None
 
     # رشته رو به base64 تبدیل کن
-    content_bytes = content.encode("utf-8")
-    encoded_content = base64.b64encode(content_bytes).decode("utf-8")
+    content_bytes = content.encode()
+    encoded_content = base64.b64encode(content_bytes).decode()
 
     data = {
         "message": "🔄 به‌روزرسانی خودکار کانفیگ‌های VLESS",
