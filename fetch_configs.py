@@ -37,7 +37,7 @@ async def extract_vless_configs(api_id, api_hash, phone, channels):
     return '\n'.join(sorted(all_configs))
 
 def upload_to_github(content, repo, branch, path, token):
-    url = f"https://api.github.com/repos/  {repo}/contents/{path}"
+    url = f"https://api.github.com/Fl2ankenStein/gilgiltop/contents/configs.txt"
     headers = {
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github.v3+json"
