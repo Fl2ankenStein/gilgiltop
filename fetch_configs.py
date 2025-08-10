@@ -19,7 +19,13 @@ async def extract_vless_configs(api_id, api_hash, phone, channels):
             channel = await client.get_entity(channel_username.strip())
             posts = await client(GetHistoryRequest(
                 peer=PeerChannel(channel.id),
-                limit=100
+                limit=100,
+                offset_date=None,
+                offset_id=0,
+                max_id=0,
+                min_id=0,
+                add_offset=0,
+                hash=0
             ))
             for message in posts.messages:
                 if message.message:
