@@ -36,7 +36,7 @@ async def extract_vless_configs(api_id, api_hash, phone, channels):
     await client.disconnect()
     return '\n'.join(sorted(all_configs))
 
-
+import base64
 
 def upload_to_github(content, repo, branch, path, token):
     url = f"https://api.github.com/repos/{repo}/contents/{path}"
@@ -45,13 +45,13 @@ def upload_to_github(content, repo, branch, path, token):
         "Accept": "application/vnd.github.v3+json"
     }
 
-    # بررسی وجود فایل قبلی
+    # بررسی وجود فایل قبلی (SHA)
     response = requests.get(url, headers=headers)
     sha = response.json().get('sha') if response.status_code == 200 else None
 
-    # رشته رو به base64 تبدیل کن
-    content_bytes = content.encode()
-    encoded_content = base64.b64encode(content_bytes).decode()
+    # 🔐 رمزگذاری صحیح: UTF-8 → Base64
+    content_bytes = content.encode("utf-8")
+    encoded_content = base64.b64encode(content_bytes).decode("utf-8")
 
     data = {
         "message": "🔄 به‌روزرسانی خودکار کانفیگ‌های VLESS",
