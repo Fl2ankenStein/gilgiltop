@@ -32,3 +32,4 @@ jobs:
           GH_FILE_PATH: ${{ secrets.GH_FILE_PATH }}
           CHANNELS: ${{ secrets.CHANNELS }}
         run: python fetch_configs.py
+  
