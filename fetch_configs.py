@@ -37,17 +37,16 @@ async def extract_vless_configs(api_id, api_hash, phone, channels):
     return '\n'.join(sorted(all_configs))
 
 def upload_to_github(content, repo, branch, path, token):
-    url = f"https://api.github.com/repos/Fl2ankenStein/gilgiltop/contents/configs.txt"
+    url = f"https://api.github.com/repos/{repo}/contents/{path}"
     headers = {
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github.v3+json"
     }
 
-    # بررسی وجود فایل قبلی (برای به‌روزرسانی)
+    # بررسی وجود فایل قبلی
     response = requests.get(url, headers=headers)
     sha = response.json().get('sha') if response.status_code == 200 else None
 
-    # آماده‌سازی داده
     data = {
         "message": "🔄 به‌روزرسانی خودکار کانفیگ‌های VLESS",
         "content": content.encode("utf-8").hex(),
@@ -56,13 +55,12 @@ def upload_to_github(content, repo, branch, path, token):
     if sha:
         data["sha"] = sha
 
-    # ارسال درخواست
     resp = requests.put(url, headers=headers, json=data)
     if resp.status_code in [200, 201]:
         print("✅ کانفیگ‌ها با موفقیت در گیتهاب آپدیت شدند.")
     else:
         print("❌ خطا در آپلود به گیتهاب:")
-        print(resp.json())
+        print(resp.json())  # این خط رو نگه دار تا خطا رو ببینی
 
 # ----------------------------- اجرای اصلی -----------------------------
 async def main():
