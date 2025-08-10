@@ -36,7 +36,7 @@ async def extract_vless_configs(api_id, api_hash, phone, channels):
     await client.disconnect()
     return '\n'.join(sorted(all_configs))
 
-import base64
+
 
 def upload_to_github(content, repo, branch, path, token):
     url = f"https://api.github.com/repos/{repo}/contents/{path}"
