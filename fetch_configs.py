@@ -37,8 +37,8 @@ async def extract_vless_configs(api_id, api_hash, phone, channels):
     return '\n'.join(sorted(all_configs))
 
 import base64
-
 def upload_to_github(content, repo, branch, path, token):
+    # ✅ بدون فاصله اضافی
     url = f"https://api.github.com/repos/{repo}/contents/{path}"
     headers = {
         "Authorization": f"token {token}",
@@ -49,7 +49,7 @@ def upload_to_github(content, repo, branch, path, token):
     response = requests.get(url, headers=headers)
     sha = response.json().get('sha') if response.status_code == 200 else None
 
-    # 🔐 رمزگذاری صحیح: UTF-8 → Base64
+    # رمزگذاری صحیح با base64
     content_bytes = content.encode("utf-8")
     encoded_content = base64.b64encode(content_bytes).decode("utf-8")
 
