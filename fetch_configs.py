@@ -2,11 +2,27 @@ import re
 import asyncio
 import requests
 import os
+import base64
 from telethon import TelegramClient
 
-# الگوی تشخیص VLESS
+
+# --- تابع تصحیح خودکار متن‌های دوباره کدگذاری شده (مثل فارسی خراب) ---
+def fix_double_encoding(text):
+    """
+    تبدیل متن‌هایی مثل 'Ø§ÛŒØ±Ø§Ù†ÛŒ' به 'ایرانی'
+    این اتفاق وقتی می‌افته که UTF-8 دوباره به عنوان latin-1 خوانده بشه.
+    """
+    try:
+        return text.encode('latin1').decode('utf-8')
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return text  # اگر نشد، همان متن اصلی باقی بماند
+
+
+# --- الگوی تشخیص VLESS ---
 VLESS_PATTERN = r'(vless://[^\s#]+)'
 
+
+# --- استخراج کانفیگ‌ها از کانال‌های تلگرام ---
 async def extract_vless_configs(api_id, api_hash, phone, channels):
     client = TelegramClient('session', api_id, api_hash)
     await client.start(phone)
@@ -16,7 +32,6 @@ async def extract_vless_configs(api_id, api_hash, phone, channels):
 
     for channel_username in channels:
         try:
-            # دریافت کانال از روی نام کاربری
             channel = await client.get_entity(channel_username.strip())
             print(f"📥 در حال خواندن از کانال: {channel_username.strip()}")
 
@@ -24,9 +39,12 @@ async def extract_vless_configs(api_id, api_hash, phone, channels):
             messages = await client.get_messages(channel, limit=100)
 
             for message in messages:
-                if message.message:
-                    # استخراج تمام لینک‌های vless
-                    matches = re.findall(VLESS_PATTERN, message.message, re.IGNORECASE)
+                if message and message.message:
+                    # تصحیح خودکار encoding
+                    cleaned_text = fix_double_encoding(message.message)
+                    
+                    # استخراج کانفیگ‌های VLESS
+                    matches = re.findall(VLESS_PATTERN, cleaned_text, re.IGNORECASE)
                     for match in matches:
                         all_configs.add(match.strip())
 
@@ -36,20 +54,20 @@ async def extract_vless_configs(api_id, api_hash, phone, channels):
     await client.disconnect()
     return '\n'.join(sorted(all_configs))
 
-import base64
+
+# --- آپلود به گیتهاب با استفاده از API ---
 def upload_to_github(content, repo, branch, path, token):
-    # ✅ بدون فاصله اضافی
     url = f"https://api.github.com/repos/{repo}/contents/{path}"
     headers = {
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github.v3+json"
     }
 
-    # بررسی وجود فایل قبلی (SHA)
+    # بررسی وجود فایل قبلی (برای به‌روزرسانی)
     response = requests.get(url, headers=headers)
     sha = response.json().get('sha') if response.status_code == 200 else None
 
-    # رمزگذاری صحیح با base64
+    # رمزگذاری صحیح با base64 (الزامی برای API گیتهاب)
     content_bytes = content.encode("utf-8")
     encoded_content = base64.b64encode(content_bytes).decode("utf-8")
 
@@ -68,23 +86,23 @@ def upload_to_github(content, repo, branch, path, token):
         print("❌ خطا در آپلود به گیتهاب:")
         print(resp.json())
 
-# ----------------------------- اجرای اصلی -----------------------------
+
+# --- اجرای اصلی ---
 async def main():
-    # خواندن اطلاعات از متغیرهای محیطی
+    # خواندن متغیرهای محیطی
     API_ID = os.getenv("API_ID")
     API_HASH = os.getenv("API_HASH")
     PHONE = os.getenv("PHONE")
-    GH_REPO = os.getenv("GH_REPO")
+    GH_REPO = os.getenv("GH_REPO")           # مثلاً Fl2ankenStein/gilgiltop
     GH_BRANCH = os.getenv("GH_BRANCH", "main")
     GH_TOKEN = os.getenv("GH_TOKEN")
     GH_FILE_PATH = os.getenv("GH_FILE_PATH", "configs.txt")
     CHANNELS = [ch.strip() for ch in os.getenv("CHANNELS", "").split(",") if ch.strip()]
 
-    # بررسی اینکه همه اطلاعات لازم وجود داشته باشد
+    # بررسی اجباری
     required = [API_ID, API_HASH, PHONE, GH_REPO, GH_TOKEN]
     if not all(required):
         print("❌ خطای تنظیمات: یک یا چند متغیر محیطی مقدار ندارد.")
-        print("لطفاً تمام secrets را در GitHub Actions تنظیم کنید.")
         return
 
     try:
@@ -101,5 +119,7 @@ async def main():
     else:
         print("⚠️ هیچ کانفیگ VLESSی پیدا نشد.")
 
+
+# --- اجرای برنامه ---
 if __name__ == "__main__":
     asyncio.run(main())
