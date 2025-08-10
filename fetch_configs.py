@@ -36,6 +36,8 @@ async def extract_vless_configs(api_id, api_hash, phone, channels):
     await client.disconnect()
     return '\n'.join(sorted(all_configs))
 
+import base64
+
 def upload_to_github(content, repo, branch, path, token):
     url = f"https://api.github.com/repos/{repo}/contents/{path}"
     headers = {
@@ -47,9 +49,13 @@ def upload_to_github(content, repo, branch, path, token):
     response = requests.get(url, headers=headers)
     sha = response.json().get('sha') if response.status_code == 200 else None
 
+    # رشته رو به base64 تبدیل کن
+    content_bytes = content.encode("utf-8")
+    encoded_content = base64.b64encode(content_bytes).decode("utf-8")
+
     data = {
         "message": "🔄 به‌روزرسانی خودکار کانفیگ‌های VLESS",
-        "content": content.encode("utf-8").hex(),
+        "content": encoded_content,
         "branch": branch
     }
     if sha:
@@ -60,7 +66,7 @@ def upload_to_github(content, repo, branch, path, token):
         print("✅ کانفیگ‌ها با موفقیت در گیتهاب آپدیت شدند.")
     else:
         print("❌ خطا در آپلود به گیتهاب:")
-        print(resp.json())  # این خط رو نگه دار تا خطا رو ببینی
+        print(resp.json())
 
 # ----------------------------- اجرای اصلی -----------------------------
 async def main():
