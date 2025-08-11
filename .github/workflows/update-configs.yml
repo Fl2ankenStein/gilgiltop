@@ -26,9 +26,9 @@ jobs:
       - name: نصب v2ray-core
         run: |
           wget -O v2ray.zip https://github.com/v2fly/v2ray-core/releases/latest/download/v2ray-linux-64.zip
-          unzip v2ray.zip -d v2ray
-          sudo mv v2ray/v2ray v2ray/v2ctl /usr/local/bin/
-          sudo chmod +x /usr/local/bin/v2ray /usr/local/bin/v2ctl
+          unzip v2ray.zip
+          sudo mv v2ray/v2ray /usr/local/bin/v2ray
+          sudo chmod +x /usr/local/bin/v2ray
           v2ray -version
 
       - name: رمزگشایی session
