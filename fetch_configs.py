@@ -10,7 +10,7 @@ from telethon import TelegramClient
 from urllib.parse import urlparse, parse_qs
 import time
 
-print("🔧 شروع اسکریپت: جمع‌آوری و تست کانفیگ VLESS")
+print("🔧 شروع اسکریپت: جمع‌آوری و فیلتر کانفیگ‌های فعال")
 
 # --- تصحیح encoding فارسی خراب ---
 def fix_double_encoding(text):
@@ -46,18 +46,18 @@ def get_flag_from_domain(host):
 # --- الگوی تشخیص VLESS ---
 VLESS_PATTERN = r'(vless://[^\s#]+)'
 
-# --- تجزیه لینک VLESS با اصلاح encryption ---
+# --- تجزیه VLESS با encryption: none ---
 def parse_vless(link):
     parsed = urlparse(link)
     query = parse_qs(parsed.query)
-    encryption = query.get('encryption', ['none'])[0]  # از کوئری بگیر، پیش‌فرض 'none'
+    encryption = query.get('encryption', ['none'])[0]
     return {
         "address": parsed.hostname,
         "port": parsed.port or 443,
         "users": [
             {
                 "id": parsed.username,
-                "encryption": encryption  # ✅ این خط مشکل را حل می‌کند
+                "encryption": encryption  # ✅ ضروری برای v2ray-core جدید
             }
         ]
     }
@@ -68,14 +68,12 @@ def parse_stream_settings(link):
     security = query.get('security', ['none'])[0]
     network = query.get('type', ['tcp'])[0]
     sni = query.get('sni', [''])[0]
-
     settings = {"network": network, "security": security}
     if security == "tls" and sni:
         settings["tlsSettings"] = {"serverName": sni}
-
     return settings
 
-# --- تست فعال‌بودن کانفیگ با http://cp.cloudflare.com ---
+# --- تست فعال‌بودن کانفیگ (حداکثر 5 ثانیه) ---
 async def is_config_alive(vless_link):
     try:
         config = {
@@ -102,45 +100,44 @@ async def is_config_alive(vless_link):
             stderr=asyncio.subprocess.PIPE
         )
 
-        await asyncio.sleep(8)  # زمان کافی برای راه‌اندازی
+        await asyncio.sleep(3)  # زمان راه‌اندازی
 
         delay_ms = None
         try:
             start_time = time.time()
             result = subprocess.run(
                 ['curl', '--proxy', 'socks5://127.0.0.1:10808',
-                 '--connect-timeout', '20', '--max-time', '30',
+                 '--connect-timeout', '5', '--max-time', '5',
                  '-s', '-o', '/dev/null',
                  'http://cp.cloudflare.com'],
-                timeout=35,
+                timeout=6,
                 check=True
             )
             end_time = time.time()
             delay_ms = int((end_time - start_time) * 1000)
-        except subprocess.CalledProcessError as e:
-            print(f"❌ دسترسی به cp.cloudflare.com ناموفق: {e}")
-            stdout, stderr = await proc.communicate()
-            if stderr:
-                print(f"🔴 v2ray خطا: {stderr.decode()}")
-            return None
-        except Exception as e:
-            print(f"❌ خطای کلی در تست: {e}")
-            return None
+        except Exception:
+            return None  # ناکارآمد
 
-        proc.terminate()
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=5)
-        except asyncio.TimeoutError:
-            proc.kill()
+        # متوقف کردن v2ray
+        if proc.returncode is None:
+            proc.terminate()
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=2)
+            except asyncio.TimeoutError:
+                proc.kill()
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=1)
+                except:
+                    pass
 
         os.unlink(config_path)
         return delay_ms
 
     except Exception as e:
-        print(f"⚠️ خطای تست کانفیگ: {e}")
+        print(f"⚠️ خطا در تست: {e}")
         return None
 
-# --- استخراج و فیلتر کانفیگ‌ها ---
+# --- استخراج و فیلتر ---
 async def extract_vless_configs(api_id, api_hash, phone, channels):
     client = TelegramClient('session', api_id, api_hash)
     try:
@@ -155,7 +152,7 @@ async def extract_vless_configs(api_id, api_hash, phone, channels):
     for channel_username in channels:
         try:
             channel = await client.get_entity(channel_username.strip())
-            print(f"📥 در حال خواندن از کانال: {channel_username.strip()}")
+            print(f"📥 خواندن از کانال: {channel_username}")
 
             messages = await client.get_messages(channel, limit=100)
             for message in messages:
@@ -169,15 +166,21 @@ async def extract_vless_configs(api_id, api_hash, phone, channels):
                             continue
 
                         flag = get_flag_from_domain(host)
-                        delay = await is_config_alive(link)
 
-                        if delay is not None:
-                            new_remark = f"gichigichitop {flag} ⏱️{delay}ms"
-                            full_config = f"{base}#{new_remark}"
-                            all_configs.add(full_config)
-                            print(f"✅ کانفیگ فعال: {new_remark}")
-                        else:
-                            print(f"❌ ناکارآمد: {base}")
+                        # تست با محدودیت زمانی 5 ثانیه
+                        try:
+                            delay = await asyncio.wait_for(is_config_alive(link), timeout=5.0)
+                            if delay is not None:
+                                new_remark = f"gichigichitop {flag} ⏱️{delay}ms"
+                                full_config = f"{base}#{new_remark}"
+                                all_configs.add(full_config)
+                                print(f"✅ فعال: {new_remark}")
+                            else:
+                                print(f"❌ ناکارآمد: {base}")
+                        except asyncio.TimeoutError:
+                            print(f"⏰ تست >5s — رد شد: {base}")
+                        except Exception as e:
+                            print(f"💥 خطا: {e}")
 
         except Exception as e:
             print(f"❌ خطا در {channel_username}: {e}")
@@ -192,7 +195,6 @@ def upload_to_github(content, repo, branch, path, token):
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github.v3+json"
     }
-
     response = requests.get(url, headers=headers)
     sha = response.json().get('sha') if response.status_code == 200 else None
 
@@ -211,7 +213,7 @@ def upload_to_github(content, repo, branch, path, token):
     if resp.status_code in [200, 201]:
         print("✅ کانفیگ‌ها با موفقیت آپدیت شدند.")
     else:
-        print("❌ خطا در آپلود به گیتهاب:")
+        print("❌ خطا در آپلود:")
         print(resp.json())
 
 # --- اجرای اصلی ---
