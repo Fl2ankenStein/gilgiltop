@@ -154,7 +154,7 @@ async def extract_vless_configs(api_id, api_hash, phone, channels):
             channel = await client.get_entity(channel_username.strip())
             print(f"📥 خواندن از کانال: {channel_username}")
 
-            messages = await client.get_messages(channel, limit=100)
+            messages = await client.get_messages(channel, limit=200)
             for message in messages:
                 if message and message.message:
                     cleaned_text = fix_double_encoding(message.message)
