@@ -22,7 +22,7 @@ def fix_double_encoding(text):
 VLESS_PATTERN = r'(vless://[^\s#]+)'
 
 
-# --- استخراج کانفیگ‌ها از کانال‌های تلگرام ---
+# --- استخراج کانفیگ‌ها از کانال‌های تلگرام و تغییر Remark به gichigichitop ---
 async def extract_vless_configs(api_id, api_hash, phone, channels):
     client = TelegramClient('session', api_id, api_hash)
     await client.start(phone)
@@ -40,13 +40,17 @@ async def extract_vless_configs(api_id, api_hash, phone, channels):
 
             for message in messages:
                 if message and message.message:
-                    # تصحیح خودکار encoding
+                    # تصحیح encoding
                     cleaned_text = fix_double_encoding(message.message)
                     
-                    # استخراج کانفیگ‌های VLESS
+                    # استخراج تمام کانفیگ‌های VLESS
                     matches = re.findall(VLESS_PATTERN, cleaned_text, re.IGNORECASE)
                     for match in matches:
-                        all_configs.add(match.strip())
+                        # حذف نام قبلی (قسمت بعد از #)
+                        base_config = match.split('#')[0]
+                        # ایجاد کانفیگ جدید با نام gichigichitop
+                        new_config = f"{base_config}#gichigichitop"
+                        all_configs.add(new_config.strip())
 
         except Exception as e:
             print(f"❌ خطا در خواندن از {channel_username}: {e}")
@@ -63,7 +67,7 @@ def upload_to_github(content, repo, branch, path, token):
         "Accept": "application/vnd.github.v3+json"
     }
 
-    # بررسی وجود فایل قبلی (برای به‌روزرسانی)
+    # بررسی وجود فایل قبلی (SHA)
     response = requests.get(url, headers=headers)
     sha = response.json().get('sha') if response.status_code == 200 else None
 
