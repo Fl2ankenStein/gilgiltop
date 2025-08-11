@@ -46,6 +46,35 @@ def get_flag_from_domain(host):
 # --- الگوی تشخیص VLESS ---
 VLESS_PATTERN = r'(vless://[^\s#]+)'
 
+# --- تجزیه لینک VLESS با اصلاح encryption ---
+def parse_vless(link):
+    parsed = urlparse(link)
+    query = parse_qs(parsed.query)
+    encryption = query.get('encryption', ['none'])[0]  # از کوئری بگیر، پیش‌فرض 'none'
+    return {
+        "address": parsed.hostname,
+        "port": parsed.port or 443,
+        "users": [
+            {
+                "id": parsed.username,
+                "encryption": encryption  # ✅ این خط مشکل را حل می‌کند
+            }
+        ]
+    }
+
+def parse_stream_settings(link):
+    parsed = urlparse(link)
+    query = parse_qs(parsed.query)
+    security = query.get('security', ['none'])[0]
+    network = query.get('type', ['tcp'])[0]
+    sni = query.get('sni', [''])[0]
+
+    settings = {"network": network, "security": security}
+    if security == "tls" and sni:
+        settings["tlsSettings"] = {"serverName": sni}
+
+    return settings
+
 # --- تست فعال‌بودن کانفیگ با http://cp.cloudflare.com ---
 async def is_config_alive(vless_link):
     try:
@@ -73,8 +102,7 @@ async def is_config_alive(vless_link):
             stderr=asyncio.subprocess.PIPE
         )
 
-        # صبر کافی برای راه‌اندازی کامل
-        await asyncio.sleep(8)
+        await asyncio.sleep(8)  # زمان کافی برای راه‌اندازی
 
         delay_ms = None
         try:
@@ -91,7 +119,6 @@ async def is_config_alive(vless_link):
             delay_ms = int((end_time - start_time) * 1000)
         except subprocess.CalledProcessError as e:
             print(f"❌ دسترسی به cp.cloudflare.com ناموفق: {e}")
-            # نمایش خطا برای دیباگ
             stdout, stderr = await proc.communicate()
             if stderr:
                 print(f"🔴 v2ray خطا: {stderr.decode()}")
@@ -100,7 +127,6 @@ async def is_config_alive(vless_link):
             print(f"❌ خطای کلی در تست: {e}")
             return None
 
-        # متوقف کردن v2ray
         proc.terminate()
         try:
             await asyncio.wait_for(proc.wait(), timeout=5)
@@ -113,27 +139,6 @@ async def is_config_alive(vless_link):
     except Exception as e:
         print(f"⚠️ خطای تست کانفیگ: {e}")
         return None
-
-def parse_vless(link):
-    parsed = urlparse(link)
-    return {
-        "address": parsed.hostname,
-        "port": parsed.port or 443,
-        "users": [{"id": parsed.username}]
-    }
-
-def parse_stream_settings(link):
-    parsed = urlparse(link)
-    query = parse_qs(parsed.query)
-    security = query.get('security', ['none'])[0]
-    network = query.get('type', ['tcp'])[0]
-    sni = query.get('sni', [''])[0]
-
-    settings = {"network": network, "security": security}
-    if security == "tls" and sni:
-        settings["tlsSettings"] = {"serverName": sni}
-
-    return settings
 
 # --- استخراج و فیلتر کانفیگ‌ها ---
 async def extract_vless_configs(api_id, api_hash, phone, channels):
