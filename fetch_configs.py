@@ -12,14 +12,14 @@ import time
 
 print("🔧 شروع اسکریپت: جمع‌آوری و تست کانفیگ VLESS")
 
-# --- تابع تصحیح encoding ---
+# --- تصحیح encoding فارسی خراب ---
 def fix_double_encoding(text):
     try:
         return text.encode('latin1').decode('utf-8')
     except:
         return text
 
-# --- نگاشت دامنه به پرچم ---
+# --- نگاشت دامنه به پرچم کشور ---
 DOMAIN_TO_FLAG = {
     'iran': '🇮🇷', 'persia': '🇮🇷', 'tehran': '🇮🇷', 'ir': '🇮🇷',
     'turkey': '🇹🇷', 'tr': '🇹🇷', 'turkiye': '🇹🇷',
@@ -43,10 +43,10 @@ def get_flag_from_domain(host):
             return flag
     return '🌐'
 
-# --- الگوی VLESS ---
+# --- الگوی تشخیص VLESS ---
 VLESS_PATTERN = r'(vless://[^\s#]+)'
 
-# --- تست فعال‌بودن کانفیگ با generate_204 و اندازه‌گیری تأخیر ---
+# --- تست فعال‌بودن کانفیگ با http://cp.cloudflare.com ---
 async def is_config_alive(vless_link):
     try:
         config = {
@@ -73,25 +73,34 @@ async def is_config_alive(vless_link):
             stderr=asyncio.subprocess.PIPE
         )
 
-        await asyncio.sleep(5)  # زمان راه‌اندازی
+        # صبر کافی برای راه‌اندازی کامل
+        await asyncio.sleep(8)
 
         delay_ms = None
         try:
             start_time = time.time()
             result = subprocess.run(
                 ['curl', '--proxy', 'socks5://127.0.0.1:10808',
-                 '--connect-timeout', '10', '--max-time', '15',
+                 '--connect-timeout', '20', '--max-time', '30',
                  '-s', '-o', '/dev/null',
-                 'https://www.google.com/generate_204'],
-                timeout=16,
+                 'http://cp.cloudflare.com'],
+                timeout=35,
                 check=True
             )
             end_time = time.time()
             delay_ms = int((end_time - start_time) * 1000)
+        except subprocess.CalledProcessError as e:
+            print(f"❌ دسترسی به cp.cloudflare.com ناموفق: {e}")
+            # نمایش خطا برای دیباگ
+            stdout, stderr = await proc.communicate()
+            if stderr:
+                print(f"🔴 v2ray خطا: {stderr.decode()}")
+            return None
         except Exception as e:
-            print(f"❌ دسترسی ناموفق: {e}")
+            print(f"❌ خطای کلی در تست: {e}")
             return None
 
+        # متوقف کردن v2ray
         proc.terminate()
         try:
             await asyncio.wait_for(proc.wait(), timeout=5)
@@ -126,7 +135,7 @@ def parse_stream_settings(link):
 
     return settings
 
-# --- استخراج و فیلتر ---
+# --- استخراج و فیلتر کانفیگ‌ها ---
 async def extract_vless_configs(api_id, api_hash, phone, channels):
     client = TelegramClient('session', api_id, api_hash)
     try:
@@ -141,7 +150,7 @@ async def extract_vless_configs(api_id, api_hash, phone, channels):
     for channel_username in channels:
         try:
             channel = await client.get_entity(channel_username.strip())
-            print(f"📥 خواندن از کانال: {channel_username}")
+            print(f"📥 در حال خواندن از کانال: {channel_username.strip()}")
 
             messages = await client.get_messages(channel, limit=100)
             for message in messages:
@@ -161,7 +170,7 @@ async def extract_vless_configs(api_id, api_hash, phone, channels):
                             new_remark = f"gichigichitop {flag} ⏱️{delay}ms"
                             full_config = f"{base}#{new_remark}"
                             all_configs.add(full_config)
-                            print(f"✅ فعال + تأخیر: {new_remark}")
+                            print(f"✅ کانفیگ فعال: {new_remark}")
                         else:
                             print(f"❌ ناکارآمد: {base}")
 
@@ -197,7 +206,7 @@ def upload_to_github(content, repo, branch, path, token):
     if resp.status_code in [200, 201]:
         print("✅ کانفیگ‌ها با موفقیت آپدیت شدند.")
     else:
-        print("❌ خطا در آپلود:")
+        print("❌ خطا در آپلود به گیتهاب:")
         print(resp.json())
 
 # --- اجرای اصلی ---
