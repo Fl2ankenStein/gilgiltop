@@ -109,7 +109,7 @@ async def is_config_alive(vless_link):
                 ['curl', '--proxy', 'socks5://127.0.0.1:10808',
                  '--connect-timeout', '5', '--max-time', '5',
                  '-s', '-o', '/dev/null',
-                 'http://cp.cloudflare.com'],
+                 'https://www.google.com/generate_204'],
                 timeout=6,
                 check=True
             )
