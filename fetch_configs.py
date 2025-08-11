@@ -1,58 +1,16 @@
-import re
 import asyncio
-import requests
-import os
-import base64
 import subprocess
 import json
 import tempfile
-from telethon import TelegramClient
-from urllib.parse import urlparse, parse_qs
+import os
+import time
 
-
-# --- تصحیح encoding فارسی خراب (مثل Ø§ÛŒØ±Ø§Ù†ÛŒ) ---
-def fix_double_encoding(text):
-    try:
-        return text.encode('latin1').decode('utf-8')
-    except (UnicodeEncodeError, UnicodeDecodeError):
-        return text
-
-
-# --- نگاشت دامنه به پرچم کشور ---
-DOMAIN_TO_FLAG = {
-    'iran': '🇮🇷', 'persia': '🇮🇷', 'tehran': '🇮🇷', 'ir': '🇮🇷', 'melli': '🇮🇷',
-    'turkey': '🇹🇷', 'tr': '🇹🇷', 'turkiye': '🇹🇷',
-    'germany': '🇩🇪', 'de': '🇩🇪', 'berlin': '🇩🇪', 'frankfurt': '🇩🇪',
-    'france': '🇫🇷', 'fr': '🇫🇷', 'paris': '🇫🇷',
-    'netherlands': '🇳🇱', 'nl': '🇳🇱', 'holland': '🇳🇱',
-    'singapore': '🇸🇬', 'sg': '🇸🇬',
-    'japan': '🇯🇵', 'jp': '🇯🇵', 'tokyo': '🇯🇵',
-    'usa': '🇺🇸', 'us': '🇺🇸', 'united states': '🇺🇸', 'new york': '🇺🇸',
-    'dubai': '🇦🇪', 'uae': '🇦🇪', 'ae': '🇦🇪',
-    'south korea': '🇰🇷', 'kr': '🇰🇷', 'seoul': '🇰🇷',
-    'russia': '🇷🇺', 'ru': '🇷🇺', 'moscow': '🇷🇺',
-    'india': '🇮🇳', 'in': '🇮🇳', 'mumbai': '🇮🇳',
-    'uk': '🇬🇧', 'london': '🇬🇧', 'england': '🇬🇧',
-    'canada': '🇨🇦', 'ca': '🇨🇦',
-    'sweden': '🇸🇪', 'se': '🇸🇪',
-    'switzerland': '🇨🇭', 'ch': '🇨🇭',
-    'finland': '🇫🇮', 'fi': '🇫🇮',
-}
-
-def get_flag_from_domain(host):
-    host_lower = host.lower()
-    for keyword, flag in DOMAIN_TO_FLAG.items():
-        if keyword in host_lower:
-            return flag
-    return '🌐'  # پرچم پیش‌فرض
-
-
-# --- الگوی تشخیص VLESS ---
-VLESS_PATTERN = r'(vless://[^\s#]+)'
-
-
-# --- تست کارکرد کانفیگ با v2ray + curl ---
 async def is_config_alive(vless_link):
+    """
+    تست می‌کند که آیا کانفیگ VLESS می‌تواند به اینترنت دسترسی داشته باشد.
+    از v2ray و https://www.google.com/generate_204 استفاده می‌کند.
+    همچنین تأخیر (ping) رو اندازه می‌گیره.
+    """
     try:
         config = {
             "inbounds": [{
@@ -78,160 +36,40 @@ async def is_config_alive(vless_link):
             stderr=asyncio.subprocess.PIPE
         )
 
+        # صبر برای راه‌اندازی کامل (مهم)
         await asyncio.sleep(5)
 
-        alive = False
+        delay_ms = None
         try:
+            # اندازه‌گیری زمان با استفاده از curl
+            start_time = time.time()
             result = subprocess.run(
-                ['curl', '--proxy', 'socks5://127.0.0.1:10808', '--connect-timeout', '10',
-                 '-s', '-o', '/dev/null', 'https://8.8.8.8'],
-                timeout=15,
+                ['curl', '--proxy', 'socks5://127.0.0.1:10808',
+                 '--connect-timeout', '10', '--max-time', '15',
+                 '-s', '-o', '/dev/null',
+                 'https://www.google.com/generate_204'],
+                timeout=16,
                 check=True
             )
-            alive = True
-        except Exception:
-            pass
+            end_time = time.time()
+            delay_ms = int((end_time - start_time) * 1000)
+            print(f"⏱️ تأخیر: {delay_ms}ms")
+        except Exception as e:
+            print(f"❌ دسترسی به generate_204 ناموفق: {e}")
+            return None  # نشان‌دهنده عدم دسترسی
 
+        # متوقف کردن v2ray
         proc.terminate()
         try:
             await asyncio.wait_for(proc.wait(), timeout=5)
         except asyncio.TimeoutError:
             proc.kill()
 
+        # پاک کردن فایل موقت
         os.unlink(config_path)
-        return alive
+
+        return delay_ms  # موفقیت + تأخیر
 
     except Exception as e:
-        print(f"⚠️ خطای تست: {e}")
-        return False
-
-
-def parse_vless(link):
-    parsed = urlparse(link)
-    return {
-        "address": parsed.hostname,
-        "port": parsed.port or 443,
-        "users": [{"id": parsed.username}]
-    }
-
-
-def parse_stream_settings(link):
-    parsed = urlparse(link)
-    query = parse_qs(parsed.query)
-    security = query.get('security', ['none'])[0]
-    network = query.get('type', ['tcp'])[0]
-    sni = query.get('sni', [''])[0]
-
-    settings = {"network": network, "security": security}
-    if security == "tls" and sni:
-        settings["tlsSettings"] = {"serverName": sni}
-
-    return settings
-
-
-# --- استخراج و فیلتر کانفیگ‌ها ---
-async def extract_vless_configs(api_id, api_hash, phone, channels):
-    client = TelegramClient('session', api_id, api_hash)
-    await client.start(phone)
-    print("✅ ورود موفق به تلگرام")
-
-    all_configs = set()
-
-    for channel_username in channels:
-        try:
-            channel = await client.get_entity(channel_username.strip())
-            print(f"📥 در حال خواندن از کانال: {channel_username.strip()}")
-
-            messages = await client.get_messages(channel, limit=100)
-
-            for message in messages:
-                if message and message.message:
-                    cleaned_text = fix_double_encoding(message.message)
-                    matches = re.findall(VLESS_PATTERN, cleaned_text, re.IGNORECASE)
-                    for link in matches:
-                        base = link.split('#')[0]
-                        host = urlparse(link).hostname
-                        if not host:
-                            continue
-
-                        flag = get_flag_from_domain(host)
-                        new_remark = f"gichigichitop {flag}"
-                        full_config = f"{base}#{new_remark}"
-
-                        print(f"🔍 تست کانفیگ: {new_remark}")
-                        if await is_config_alive(link):
-                            all_configs.add(full_config)
-                            print(f"✅ کانفیگ فعال اضافه شد: {full_config[:60]}...")
-                        else:
-                            print(f"❌ کانفیگ ناکارآمد: {full_config}")
-
-        except Exception as e:
-            print(f"❌ خطا در {channel_username}: {e}")
-
-    await client.disconnect()
-    return '\n'.join(sorted(all_configs))
-
-
-# --- آپلود به گیتهاب ---
-def upload_to_github(content, repo, branch, path, token):
-    url = f"https://api.github.com/repos/{repo}/contents/{path}"
-    headers = {
-        "Authorization": f"token {token}",
-        "Accept": "application/vnd.github.v3+json"
-    }
-
-    response = requests.get(url, headers=headers)
-    sha = response.json().get('sha') if response.status_code == 200 else None
-
-    content_bytes = content.encode("utf-8")
-    encoded_content = base64.b64encode(content_bytes).decode("utf-8")
-
-    data = {
-        "message": "🔄 به‌روزرسانی خودکار کانفیگ‌های VLESS",
-        "content": encoded_content,
-        "branch": branch
-    }
-    if sha:
-        data["sha"] = sha
-
-    resp = requests.put(url, headers=headers, json=data)
-    if resp.status_code in [200, 201]:
-        print("✅ کانفیگ‌ها با موفقیت آپدیت شدند.")
-    else:
-        print("❌ خطا در آپلود به گیتهاب:")
-        print(resp.json())
-
-
-# --- اجرای اصلی ---
-async def main():
-    API_ID = os.getenv("API_ID")
-    API_HASH = os.getenv("API_HASH")
-    PHONE = os.getenv("PHONE")
-    GH_REPO = os.getenv("GH_REPO")
-    GH_BRANCH = os.getenv("GH_BRANCH", "main")
-    GH_TOKEN = os.getenv("GH_TOKEN")
-    GH_FILE_PATH = os.getenv("GH_FILE_PATH", "configs.txt")
-    CHANNELS = [ch.strip() for ch in os.getenv("CHANNELS", "").split(",") if ch.strip()]
-
-    required = [API_ID, API_HASH, PHONE, GH_REPO, GH_TOKEN]
-    if not all(required):
-        print("❌ متغیرهای محیطی ناقص.")
-        return
-
-    try:
-        API_ID = int(API_ID)
-    except:
-        print("❌ API_ID نامعتبر.")
-        return
-
-    print(f"🔍 جستجو در {len(CHANNELS)} کانال")
-    configs = await extract_vless_configs(API_ID, API_HASH, PHONE, CHANNELS)
-
-    if configs.strip():
-        upload_to_github(configs, GH_REPO, GH_BRANCH, GH_FILE_PATH, GH_TOKEN)
-    else:
-        print("⚠️ هیچ کانفیگ فعالی پیدا نشد.")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+        print(f"⚠️ خطای تست کانفیگ: {e}")
+        return None
