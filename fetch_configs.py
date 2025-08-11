@@ -109,7 +109,7 @@ async def is_config_alive(vless_link):
                 ['curl', '--proxy', 'socks5://127.0.0.1:10808',
                  '--connect-timeout', '5', '--max-time', '5',
                  '-s', '-o', '/dev/null',
-                 'https://www.google.com/generate_204'],
+                 'https://cp.cloudflare.com'],
                 timeout=6,
                 check=True
             )
@@ -169,7 +169,7 @@ async def extract_vless_configs(api_id, api_hash, phone, channels):
 
                         # تست با محدودیت زمانی 5 ثانیه
                         try:
-                            delay = await asyncio.wait_for(is_config_alive(link), timeout=5.0)
+                            delay = await asyncio.wait_for(is_config_alive(link), timeout=8.0)
                             if delay is not None:
                                 new_remark = f"gichigichitop {flag} ⏱️{delay}ms"
                                 full_config = f"{base}#{new_remark}"
